@@ -1,0 +1,36 @@
+#ifndef HOOKER_H
+#define HOOKER_H
+
+#include <winternl.h>
+
+#define DLLEXPORT __declspec(dllexport)
+
+// Exports
+DLLEXPORT void HookerInit(void);
+
+// Internals
+HANDLE HookedCreateFileW(
+    LPCWSTR               lpFileName,
+    DWORD                 dwDesiredAccess,
+    DWORD                 dwShareMode,
+    LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+    DWORD                 dwCreationDisposition,
+    DWORD                 dwFlagsAndAttributes,
+    HANDLE                hTemplateFile
+);
+
+NTSTATUS NtCreateFile (
+    PHANDLE            FileHandle,
+    ACCESS_MASK        DesiredAccess,
+    POBJECT_ATTRIBUTES ObjectAttributes,
+    PIO_STATUS_BLOCK   IoStatusBlock,
+    PLARGE_INTEGER     AllocationSize,
+    ULONG              FileAttributes,
+    ULONG              ShareAccess,
+    ULONG              CreateDisposition,
+    ULONG              CreateOptions,
+    PVOID              EaBuffer,
+    ULONG              EaLength
+);
+
+#endif
