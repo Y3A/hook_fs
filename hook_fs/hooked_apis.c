@@ -15,10 +15,20 @@ HANDLE HookedCreateFileW(
     HANDLE                hTemplateFile
 )
 {
-    return 0;
+    for (int i = 0; i < MAX_FILES; i++) {
+        if (wcscmp(g_files[i].name, lpFileName) != 0)
+            continue;
+
+        // Is a file we want to hook
+        return g_files[i].handle;
+    }
+
+    // Can't touch disk!
+    SetLastError(ERROR_FILE_NOT_FOUND);
+    return INVALID_HANDLE_VALUE;
 }
 
-NTSTATUS NtCreateFile(
+NTSTATUS HookedNtCreateFile(
     PHANDLE            FileHandle,
     ACCESS_MASK        DesiredAccess,
     POBJECT_ATTRIBUTES ObjectAttributes,

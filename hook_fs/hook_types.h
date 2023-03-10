@@ -3,16 +3,15 @@
 
 #include <winnt.h>
 
-#define MAX_FILES 0x100;
-#define HANDLE_START;
+#define MAX_FILES 0x100
+#define HANDLE_START 0x82
 
 typedef struct
 {
-    WCHAR   path[MAX_PATH + 1];
+    WCHAR   name[MAX_PATH + 1];
     HANDLE  handle;
     PVOID   data;
-    ULONG64 data_len;
-    DWORD   inuse;
+    SIZE_T  data_len;
 } INTERNAL_FILE, *PINTERNAL_FILE;
 
 // functions

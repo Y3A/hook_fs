@@ -2,11 +2,15 @@
 #define HOOKER_H
 
 #include <winternl.h>
+#include "hook_types.h"
 
 #define DLLEXPORT __declspec(dllexport)
 
 // Exports
+extern INTERNAL_FILE g_files[MAX_FILES];
+
 DLLEXPORT void HookerInit(void);
+DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffer);
 
 // Internals
 HANDLE HookedCreateFileW(
@@ -19,7 +23,7 @@ HANDLE HookedCreateFileW(
     HANDLE                hTemplateFile
 );
 
-NTSTATUS NtCreateFile (
+NTSTATUS HookedNtCreateFile (
     PHANDLE            FileHandle,
     ACCESS_MASK        DesiredAccess,
     POBJECT_ATTRIBUTES ObjectAttributes,
