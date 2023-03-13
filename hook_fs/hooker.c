@@ -5,8 +5,12 @@
 #include "hooker.h"
 #include "hook_types.h"
 
-_CreateFileW  fCreateFileW;
-_NtCreateFile fNtCreateFile;
+_CreateFileW   fCreateFileW;
+_NtCreateFile  fNtCreateFile;
+_ReadFile      fReadFile;
+_NtReadFile    fNtReadFile;
+_GetFileSize   fGetFileSize;
+_GetFileSizeEx fGetFileSizeEx;
 
 INTERNAL_FILE g_files[MAX_FILES];
 HANDLE        g_cur_unique_handle = HANDLE_START;
@@ -15,15 +19,23 @@ DWORD         g_cur_index;
 DLLEXPORT void HookerInit(void)
 {
     // Load desired functions
-    fCreateFileW = GetProcAddress(GetModuleHandleW(L"Kernel32.dll"), "CreateFileW");
+    fCreateFileW = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "CreateFileW");
     fNtCreateFile = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtCreateFile");
+    fReadFile = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "ReadFile");
+    fNtReadFile = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtReadFile");
+    fGetFileSize = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileSize");
+    fGetFileSizeEx = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileSizeEx");
 
     // Use detours to hook em
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
 
-    DetourAttach(&(PVOID&)fCreateFileW, HookedCreateFileW);
-    DetourAttach(&(PVOID&)fNtCreateFile, HookedNtCreateFile);
+    DetourAttach((PVOID)&fCreateFileW, HookedCreateFileW);
+    DetourAttach((PVOID)&fNtCreateFile, HookedNtCreateFile);
+    DetourAttach((PVOID)&fReadFile, HookedReadFile);
+    DetourAttach((PVOID)&fNtReadFile, HookedNtReadFile);
+    DetourAttach((PVOID)&fGetFileSize, HookedGetFileSize);
+    DetourAttach((PVOID)&fGetFileSizeEx, HookedGetFileSizeEx);
 
     DetourTransactionCommit();
     return;
@@ -49,6 +61,22 @@ DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffe
     file->data_len = cbBuffer;
 
     return TRUE;
+}
+
+DLLEXPORT BOOL HookerUpdateBufLen(HANDLE hFile, SIZE_T cbBuffer)
+{
+    DWORD cur_max = g_cur_index;
+
+    for (int i = 0; i < cur_max; i++) {
+        if (hFile != g_files[i].handle)
+            continue;
+
+        // Update buffer length(harness does this for fuzzer)
+        g_files[i].data_len = cbBuffer;
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)

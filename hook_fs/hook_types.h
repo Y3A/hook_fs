@@ -6,12 +6,17 @@
 #define MAX_FILES 0x100
 #define HANDLE_START 0x82
 
+#define FILE_USE_FILE_POINTER_POSITION 0xfffffffe
+
 typedef struct
 {
     WCHAR   name[MAX_PATH + 1];
     HANDLE  handle;
     PVOID   data;
     SIZE_T  data_len;
+    DWORD   attributes;
+    DWORD   pos;
+    DWORD   ref_count;
 } INTERNAL_FILE, *PINTERNAL_FILE;
 
 // functions
@@ -38,6 +43,36 @@ typedef NTSTATUS (*_NtCreateFile) (
     ULONG              CreateOptions,
     PVOID              EaBuffer,
     ULONG              EaLength
+);
+
+typedef BOOL (*_ReadFile) (
+    HANDLE       hFile,
+    LPVOID       lpBuffer,
+    DWORD        nNumberOfBytesToRead,
+    LPDWORD      lpNumberOfBytesRead,
+    LPOVERLAPPED lpOverlapped
+);
+
+typedef NTSTATUS (*_NtReadFile) (
+    HANDLE           FileHandle,
+    HANDLE           Event,
+    PIO_APC_ROUTINE  ApcRoutine,
+    PVOID            ApcContext,
+    PIO_STATUS_BLOCK IoStatusBlock,
+    PVOID            Buffer,
+    ULONG            Length,
+    PLARGE_INTEGER   ByteOffset,
+    PULONG           Key
+    );
+
+typedef DWORD (*_GetFileSize) (
+    HANDLE  hFile,
+    LPDWORD lpFileSizeHigh
+);
+
+typedef BOOL (*_GetFileSizeEx) (
+    HANDLE         hFile,
+    PLARGE_INTEGER lpFileSize
 );
 
 #endif
