@@ -283,3 +283,30 @@ BOOL HookedGetFileSizeEx(
     SetLastError(ERROR_FILE_NOT_FOUND);
     return FALSE;
 }
+
+BOOL HookedCloseHandle(
+    HANDLE hObject
+)
+{
+    DWORD cur_max = g_cur_index;
+    
+    for (int i = 0; i < cur_max; i++) {
+        if (hObject != g_files[i].handle)
+            continue;
+
+        // Found hooked file
+        if (g_files[i].ref_count) {
+            InterlockedDecrement(&g_files[i].ref_count);
+            SetLastError(NO_ERROR);
+            return TRUE;
+        }
+
+        // Attempting to close a handle without references
+        SetLastError(ERROR_INVALID_HANDLE);
+        return FALSE;
+    }
+
+    // Not a hooked file, forward to real API to close like mutexes and stuff
+    // And CloseHandle probably don't touch disk anyways
+    return fCloseHandle(hObject);
+}

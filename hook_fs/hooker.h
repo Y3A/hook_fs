@@ -9,6 +9,7 @@
 // Exports
 extern INTERNAL_FILE g_files[MAX_FILES];
 extern DWORD         g_cur_index;
+extern _CloseHandle  fCloseHandle;
 
 DLLEXPORT void HookerInit(void);
 DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffer);
@@ -67,6 +68,10 @@ DWORD HookedGetFileSize (
 BOOL HookedGetFileSizeEx (
     HANDLE         hFile,
     PLARGE_INTEGER lpFileSize
+);
+
+BOOL HookedCloseHandle (
+    HANDLE hObject
 );
 
 #endif

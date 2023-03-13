@@ -11,6 +11,7 @@ _ReadFile      fReadFile;
 _NtReadFile    fNtReadFile;
 _GetFileSize   fGetFileSize;
 _GetFileSizeEx fGetFileSizeEx;
+_CloseHandle   fCloseHandle;
 
 INTERNAL_FILE g_files[MAX_FILES];
 HANDLE        g_cur_unique_handle = HANDLE_START;
@@ -25,6 +26,7 @@ DLLEXPORT void HookerInit(void)
     fNtReadFile = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtReadFile");
     fGetFileSize = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileSize");
     fGetFileSizeEx = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileSizeEx");
+    fCloseHandle = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "CloseHandle");
 
     // Use detours to hook em
     DetourTransactionBegin();
@@ -36,6 +38,7 @@ DLLEXPORT void HookerInit(void)
     DetourAttach((PVOID)&fNtReadFile, HookedNtReadFile);
     DetourAttach((PVOID)&fGetFileSize, HookedGetFileSize);
     DetourAttach((PVOID)&fGetFileSizeEx, HookedGetFileSizeEx);
+    DetourAttach((PVOID)&fCloseHandle, HookedCloseHandle);
 
     DetourTransactionCommit();
     return;

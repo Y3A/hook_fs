@@ -75,4 +75,8 @@ typedef BOOL (*_GetFileSizeEx) (
     PLARGE_INTEGER lpFileSize
 );
 
+typedef BOOL (*_CloseHandle) (
+    HANDLE hObject
+);
+
 #endif
