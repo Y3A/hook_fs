@@ -35,7 +35,7 @@ HANDLE HookedCreateFileW(
         }
 
         SetLastError(NO_ERROR);
-        g_files[i].attributes = dwFlagsAndAttributes;
+        g_files[i].flag_attributes = dwFlagsAndAttributes;
         InterlockedIncrement(&g_files[i].ref_count);
 
         return g_files[i].handle;
@@ -60,18 +60,42 @@ NTSTATUS HookedNtCreateFile(
     ULONG              EaLength
 )
 {
-    if (ObjectAttributes->RootDirectory) {
+    HANDLE   res;
+    NTSTATUS status = STATUS_SUCCESS;
+
+    if (!FileHandle)
+        return ERROR_INVALID_PARAMETER;
+
+    if (ObjectAttributes->RootDirectory)
         // ObjectName is relative, just call our fake createfile
-        return HookedCreateFileW(
-            ObjectAttributes->ObjectName->Buffer, 0, 0, NULL, 0, 0, NULL
-        ) ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID;
-    }
-    else {
+        res = HookedCreateFileW(ObjectAttributes->ObjectName->Buffer, \
+            0, 0, NULL, 0, 0, NULL);
+
+    else
         // ObjectName is absolute, assume \\?\ for global root directory
-        return HookedCreateFileW(
-            ObjectAttributes->ObjectName->Buffer + strlen("\\\\?\\") * 2, 0, 0, NULL, 0, 0, NULL
-        ) ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID;
+        res = HookedCreateFileW(ObjectAttributes->ObjectName->Buffer + strlen("\\\\?\\") * 2, \
+            0, 0, NULL, 0, 0, NULL);
+
+    *FileHandle = res;
+
+    if (res == INVALID_HANDLE_VALUE) {
+        switch (GetLastError())
+        {
+            case ERROR_INVALID_PARAMETER:
+                status = STATUS_INVALID_PARAMETER;
+                break;
+
+            case ERROR_SHARING_VIOLATION:
+                status = STATUS_SHARING_VIOLATION;
+                break;
+
+            default:
+                status = STATUS_OBJECT_NAME_NOT_FOUND;
+        }
     }
+
+    return status;
+
 }
 
 BOOL HookedReadFile(
@@ -103,16 +127,28 @@ BOOL HookedReadFile(
         // Hooked file, return from buffer
         file = &g_files[i];
         to_read = nNumberOfBytesToRead > file->data_len ? file->data_len : nNumberOfBytesToRead;
-        
+        offset = file->pos;
+
+        // Error handling for ridiculous offsets by SetFilePointer and friends
+        if (offset >= file->data_len)
+            if (!lpOverlapped) {
+                *lpNumberOfBytesRead = 0;
+                SetLastError(NO_ERROR);
+                return TRUE;
+            }
+
         if (!lpOverlapped) {
+            // Won't overflow here since offset can't reach > 32bits
+            to_read = to_read > (file->data_len - (DWORD)offset) ? (file->data_len - (DWORD)offset) : to_read;
             // No offsets and stuff, direct read
-            RtlMoveMemory(lpBuffer, file->data, to_read);
+            RtlMoveMemory(lpBuffer, (PBYTE)((ULONG64)file->data + (ULONG64)offset), to_read);
+            InterlockedAdd(&file->pos, to_read);
             *lpNumberOfBytesRead = to_read;
             SetLastError(NO_ERROR);
             return TRUE;
         }
 
-        // Read from offset
+        // lpOverlapped is set, do offset read
         lpOverlapped->Internal = STATUS_PENDING;
         
         if (lpOverlapped->hEvent)
@@ -128,18 +164,22 @@ BOOL HookedReadFile(
         offset = lpOverlapped->OffsetHigh;
         offset = offset << 32 | lpOverlapped->Offset;
 
-        if (offset > (ULONG64)file->data_len) {
+        // Out of bounds
+        if (offset >= (ULONG64)file->data_len) {
             SetLastError(ERROR_HANDLE_EOF);
             lpOverlapped->Internal = STATUS_END_OF_FILE;
             lpOverlapped->InternalHigh = 0;
+            if (lpOverlapped->hEvent)
+                SetEvent(lpOverlapped->hEvent);
             return FALSE;
         }
 
-        // Won't overflow here since offset can't reach > 32bits
         to_read = to_read > (file->data_len - (DWORD)offset) ? (file->data_len - (DWORD)offset) : to_read;
         RtlMoveMemory(lpBuffer, (PBYTE)((ULONG64)file->data + (ULONG64)offset), to_read);
 
         // Return success
+        InterlockedAdd(&file->pos, to_read);
+
         if (lpNumberOfBytesRead)
             *lpNumberOfBytesRead = to_read;
 
@@ -190,7 +230,7 @@ NTSTATUS HookedNtReadFile(
         
         if (ByteOffset) {
             if (ByteOffset->HighPart == -1 && ByteOffset->LowPart == FILE_USE_FILE_POINTER_POSITION \
-                && (file->attributes & FILE_SYNCHRONOUS_IO_ALERT || file->attributes & FILE_SYNCHRONOUS_IO_NONALERT)) {
+                && (file->flag_attributes & FILE_SYNCHRONOUS_IO_ALERT || file->flag_attributes & FILE_SYNCHRONOUS_IO_NONALERT)) {
                 // Special case, read from current pos
                 offset = pos;
             }
@@ -209,9 +249,17 @@ NTSTATUS HookedNtReadFile(
             }
         }
         else
-            if (file->attributes & FILE_SYNCHRONOUS_IO_ALERT || file->attributes & FILE_SYNCHRONOUS_IO_NONALERT)
+            if (file->flag_attributes & FILE_SYNCHRONOUS_IO_ALERT || file->flag_attributes & FILE_SYNCHRONOUS_IO_NONALERT)
                 // Special case again, continue position
                 offset = pos;
+
+        // Check if offset is end
+        if (offset >= file->data_len) {
+            IoStatusBlock->Status = STATUS_END_OF_FILE;
+            if (Event)
+                SetEvent(Event);
+            return STATUS_END_OF_FILE;
+        }
 
         // Read with buffer
         // Won't overflow here since offset can't reach > 32bits
@@ -309,4 +357,160 @@ BOOL HookedCloseHandle(
     // Not a hooked file, forward to real API to close like mutexes and stuff
     // And CloseHandle probably don't touch disk anyways
     return fCloseHandle(hObject);
+}
+
+DWORD HookedSetFilePointer(
+    HANDLE hFile,
+    LONG   lDistanceToMove,
+    PLONG  lpDistanceToMoveHigh,
+    DWORD  dwMoveMethod
+)
+{
+    DWORD           cur_max = g_cur_index;
+    PINTERNAL_FILE  file;
+    DWORD           pos;
+
+    for (int i = 0; i < cur_max; i++) {
+        if (hFile != g_files[i].handle)
+            continue;
+
+        // Found hooked file
+        file = &g_files[i];
+        pos = file->pos;
+
+        if (lpDistanceToMoveHigh && *lpDistanceToMoveHigh != 0) {
+            // Don't support 64 bit offsets
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return INVALID_SET_FILE_POINTER;
+        }
+
+        // Now we can ignore high bytes
+        switch (dwMoveMethod)
+        {
+            case FILE_BEGIN:
+                pos = 0;
+                break;
+
+            case FILE_CURRENT:
+                break;
+
+            case FILE_END:
+                pos = file->data_len;
+                break;
+
+            default:
+                // Error
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return INVALID_SET_FILE_POINTER;
+        }
+
+        pos = pos + lDistanceToMove;
+        if (pos < 0) {
+            // Negative seek
+            SetLastError(ERROR_NEGATIVE_SEEK);
+            return INVALID_SET_FILE_POINTER;
+        }
+
+        // Success
+        file->pos = pos;
+        SetLastError(NO_ERROR);
+        return pos;
+    }
+
+    // Not a hooked file
+    SetLastError(ERROR_FILE_NOT_FOUND);
+    return INVALID_SET_FILE_POINTER;
+}
+
+BOOL HookedSetFilePointerEx(
+    HANDLE         hFile,
+    LARGE_INTEGER  liDistanceToMove,
+    PLARGE_INTEGER lpNewFilePointer,
+    DWORD          dwMoveMethod
+)
+{
+    DWORD res;
+
+    if (liDistanceToMove.HighPart) {
+        // Again, don't support 64bit
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    res = HookedSetFilePointer(hFile, liDistanceToMove.LowPart, NULL, dwMoveMethod);
+    if (res == INVALID_SET_FILE_POINTER) {
+        // Error would have been set by the other function
+        return FALSE;
+    }
+
+    // File pointer is also set, we just have to set output(or not)
+    if (lpNewFilePointer)
+        lpNewFilePointer->QuadPart = (ULONG64)res;
+
+    return TRUE;
+}
+
+DWORD HookedGetFileAttributesW(
+    LPCWSTR lpFileName
+)
+{
+    DWORD cur_max = g_cur_index;
+
+    for (int i = 0; i < cur_max; i++) {
+        if (wcscmp(lpFileName, g_files[i].name) != 0)
+            continue;
+
+        // Found hooked file
+        SetLastError(NO_ERROR);
+        return g_files[i].attributes;
+    }
+
+    SetLastError(ERROR_FILE_NOT_FOUND);
+    return INVALID_FILE_ATTRIBUTES;
+}
+
+BOOL HookedGetFileAttributesExW(
+    LPCWSTR                lpFileName,
+    GET_FILEEX_INFO_LEVELS fInfoLevelId,
+    LPVOID                 lpFileInformation
+)
+{
+    DWORD           cur_max = g_cur_index;
+    PINTERNAL_FILE  file;
+
+    if (!lpFileInformation) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    for (int i = 0; i < cur_max; i++) {
+        if (wcscmp(lpFileName, g_files[i].name) != 0)
+            continue;
+
+        // Found hooked file
+        file = &g_files[i];
+
+        // Set a generic error(none) first, override later
+        SetLastError(NO_ERROR);
+
+        // Assemble output buffer
+        switch (fInfoLevelId)
+        {
+            case GetFileExInfoStandard:
+                ((LPWIN32_FILE_ATTRIBUTE_DATA)lpFileInformation)->dwFileAttributes = file->attributes;
+                ((LPWIN32_FILE_ATTRIBUTE_DATA)lpFileInformation)->nFileSizeLow = file->data_len;
+                // Other info like creation time shall be null
+                break;
+
+            default:
+                // Invalid info level
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+        }
+
+        return TRUE;
+    }
+
+    SetLastError(ERROR_FILE_NOT_FOUND);
+    return FALSE;
 }

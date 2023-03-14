@@ -15,6 +15,7 @@ typedef struct
     PVOID   data;
     SIZE_T  data_len;
     DWORD   attributes;
+    DWORD   flag_attributes; // creation time flag and attributes
     DWORD   pos;
     DWORD   ref_count;
 } INTERNAL_FILE, *PINTERNAL_FILE;
@@ -77,6 +78,30 @@ typedef BOOL (*_GetFileSizeEx) (
 
 typedef BOOL (*_CloseHandle) (
     HANDLE hObject
+);
+
+typedef DWORD (*_SetFilePointer) (
+    HANDLE hFile,
+    LONG   lDistanceToMove,
+    PLONG  lpDistanceToMoveHigh,
+    DWORD  dwMoveMethod
+);
+
+typedef BOOL (*_SetFilePointerEx) (
+    HANDLE         hFile,
+    LARGE_INTEGER  liDistanceToMove,
+    PLARGE_INTEGER lpNewFilePointer,
+    DWORD          dwMoveMethod
+);
+
+typedef DWORD (*_GetFileAttributesW) (
+    LPCWSTR lpFileName
+);
+
+typedef BOOL (*_GetFileAttributesExW) (
+    LPCWSTR                lpFileName,
+    GET_FILEEX_INFO_LEVELS fInfoLevelId,
+    LPVOID                 lpFileInformation
 );
 
 #endif

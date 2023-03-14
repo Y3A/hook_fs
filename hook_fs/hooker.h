@@ -74,4 +74,28 @@ BOOL HookedCloseHandle (
     HANDLE hObject
 );
 
+DWORD HookedSetFilePointer (
+    HANDLE hFile,
+    LONG   lDistanceToMove,
+    PLONG  lpDistanceToMoveHigh,
+    DWORD  dwMoveMethod
+);
+
+BOOL HookedSetFilePointerEx (
+    HANDLE         hFile,
+    LARGE_INTEGER  liDistanceToMove,
+    PLARGE_INTEGER lpNewFilePointer,
+    DWORD          dwMoveMethod
+);
+
+DWORD HookedGetFileAttributesW (
+    LPCWSTR lpFileName
+);
+
+BOOL HookedGetFileAttributesExW (
+    LPCWSTR                lpFileName,
+    GET_FILEEX_INFO_LEVELS fInfoLevelId,
+    LPVOID                 lpFileInformation
+);
+
 #endif

@@ -5,13 +5,17 @@
 #include "hooker.h"
 #include "hook_types.h"
 
-_CreateFileW   fCreateFileW;
-_NtCreateFile  fNtCreateFile;
-_ReadFile      fReadFile;
-_NtReadFile    fNtReadFile;
-_GetFileSize   fGetFileSize;
-_GetFileSizeEx fGetFileSizeEx;
-_CloseHandle   fCloseHandle;
+_CreateFileW           fCreateFileW;
+_NtCreateFile          fNtCreateFile;
+_ReadFile              fReadFile;
+_NtReadFile            fNtReadFile;
+_GetFileSize           fGetFileSize;
+_GetFileSizeEx         fGetFileSizeEx;
+_CloseHandle           fCloseHandle;
+_SetFilePointer        fSetFilePointer;
+_SetFilePointerEx      fSetFilePointerEx;
+_GetFileAttributesW    fGetFileAttributesW;
+_GetFileAttributesExW  fGetFileAttributesExW;
 
 INTERNAL_FILE g_files[MAX_FILES];
 HANDLE        g_cur_unique_handle = HANDLE_START;
@@ -27,6 +31,10 @@ DLLEXPORT void HookerInit(void)
     fGetFileSize = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileSize");
     fGetFileSizeEx = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileSizeEx");
     fCloseHandle = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "CloseHandle");
+    fSetFilePointer = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "SetFilePointer");
+    fSetFilePointerEx = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "SetFilePointerEx");
+    fGetFileAttributesW = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileAttributesW");
+    fGetFileAttributesExW = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileAttributesExW");
 
     // Use detours to hook em
     DetourTransactionBegin();
@@ -39,12 +47,16 @@ DLLEXPORT void HookerInit(void)
     DetourAttach((PVOID)&fGetFileSize, HookedGetFileSize);
     DetourAttach((PVOID)&fGetFileSizeEx, HookedGetFileSizeEx);
     DetourAttach((PVOID)&fCloseHandle, HookedCloseHandle);
+    DetourAttach((PVOID)&fSetFilePointer, HookedSetFilePointer);
+    DetourAttach((PVOID)&fSetFilePointerEx, HookedSetFilePointerEx);
+    DetourAttach((PVOID)&fGetFileAttributesW, HookedGetFileAttributesW);
+    DetourAttach((PVOID)&fGetFileAttributesExW, HookedGetFileAttributesExW);
 
     DetourTransactionCommit();
     return;
 }
 
-DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffer)
+DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffer, DWORD dwAttributes)
 {
     HANDLE          assignable_handle = g_cur_unique_handle;
     DWORD           free_slot = g_cur_index;
@@ -62,6 +74,7 @@ DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffe
     file->handle = assignable_handle;
     file->data = lpBuffer;
     file->data_len = cbBuffer;
+    file->attributes = dwAttributes;
 
     return TRUE;
 }
