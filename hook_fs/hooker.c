@@ -24,9 +24,14 @@ _GetOverlappedResultEx   fGetOverlappedResultEx;
 INTERNAL_FILE g_files[MAX_FILES];
 HANDLE        g_cur_unique_handle = HANDLE_START;
 DWORD         g_cur_index;
+BOOL          g_init;
 
 DLLEXPORT void HookerInit(void)
 {
+    if (g_init)
+        return;
+    g_init = 1;
+
     // Load desired functions
     fCreateFileW = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "CreateFileW");
     fNtCreateFile = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtCreateFile");
