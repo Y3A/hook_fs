@@ -13,7 +13,7 @@ extern _CloseHandle  fCloseHandle;
 
 DLLEXPORT void HookerInit(void);
 DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffer);
-DLLEXPORT BOOL HookerUpdateBufLen(HANDLE hFile, SIZE_T cbBuffer);
+DLLEXPORT BOOL HookerUpdateBufLen(LPCWSTR lpFileName, SIZE_T cbBuffer);
 
 // Internals
 HANDLE HookedCreateFileW(

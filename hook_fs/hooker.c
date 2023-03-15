@@ -5,6 +5,8 @@
 #include "hooker.h"
 #include "hook_types.h"
 
+#pragma comment(lib, "detours.lib")
+
 _CreateFileW             fCreateFileW;
 _NtCreateFile            fNtCreateFile;
 _ReadFile                fReadFile;
@@ -85,12 +87,12 @@ DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffe
     return TRUE;
 }
 
-DLLEXPORT BOOL HookerUpdateBufLen(HANDLE hFile, SIZE_T cbBuffer)
+DLLEXPORT BOOL HookerUpdateBufLen(LPCWSTR lpFileName, SIZE_T cbBuffer)
 {
     DWORD cur_max = g_cur_index;
 
     for (int i = 0; i < cur_max; i++) {
-        if (hFile != g_files[i].handle)
+        if (wcscmp(lpFileName, g_files[i].name) != 0)
             continue;
 
         // Update buffer length(harness does this for fuzzer)

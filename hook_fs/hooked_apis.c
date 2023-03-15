@@ -101,7 +101,7 @@ BOOL HookedReadFile(
 )
 {
     DWORD          cur_max = g_cur_index;
-    DWORD          to_read = 0;
+    DWORD          to_read = nNumberOfBytesToRead;
     PINTERNAL_FILE file;
     ULONG64        offset = 0;
 
@@ -120,7 +120,6 @@ BOOL HookedReadFile(
 
         // Hooked file, return from buffer
         file = &g_files[i];
-        to_read = nNumberOfBytesToRead > file->data_len ? file->data_len : nNumberOfBytesToRead;
         offset = file->pos;
 
         // lpOverlapped can't be null if file is opened as overlapped
@@ -139,6 +138,7 @@ BOOL HookedReadFile(
 
         if (!lpOverlapped) {
             // Won't overflow here since offset can't reach > 32bits
+            to_read = nNumberOfBytesToRead > file->data_len ? file->data_len : nNumberOfBytesToRead;
             to_read = to_read > (file->data_len - (DWORD)offset) ? (file->data_len - (DWORD)offset) : to_read;
             // No offsets and stuff, direct read
             RtlMoveMemory(lpBuffer, (PBYTE)((ULONG64)file->data + (ULONG64)offset), to_read);
@@ -161,12 +161,12 @@ BOOL HookedReadFile(
             }
 
         // Begin IO
+        SetLastError(ERROR_IO_PENDING);
         offset = lpOverlapped->OffsetHigh;
         offset = offset << 32 | lpOverlapped->Offset;
 
         // Out of bounds
         if (offset >= (ULONG64)file->data_len) {
-            SetLastError(ERROR_HANDLE_EOF);
             lpOverlapped->Internal = STATUS_END_OF_FILE;
             lpOverlapped->InternalHigh = 0;
             if (lpOverlapped->hEvent)
@@ -174,6 +174,13 @@ BOOL HookedReadFile(
             return FALSE;
         }
 
+        // Handle EOF
+        if ((ULONG64)offset + (ULONG64)to_read > (ULONG64)file->data_len)
+            lpOverlapped->Internal = STATUS_END_OF_FILE;
+        else
+            lpOverlapped->Internal = STATUS_SUCCESS;
+
+        to_read = nNumberOfBytesToRead > file->data_len ? file->data_len : nNumberOfBytesToRead;
         to_read = to_read > (file->data_len - (DWORD)offset) ? (file->data_len - (DWORD)offset) : to_read;
         RtlMoveMemory(lpBuffer, (PBYTE)((ULONG64)file->data + (ULONG64)offset), to_read);
 
@@ -183,14 +190,13 @@ BOOL HookedReadFile(
         if (lpNumberOfBytesRead)
             *lpNumberOfBytesRead = to_read;
 
-        lpOverlapped->Internal = STATUS_SUCCESS;
         lpOverlapped->InternalHigh = to_read;
      
         if (lpOverlapped->hEvent)
             SetEvent(lpOverlapped->hEvent);
 
-        SetLastError(NO_ERROR);
-        return TRUE;
+        // Return pending to emulate async
+        return FALSE;
     }
 
     SetLastError(ERROR_FILE_NOT_FOUND);
@@ -535,7 +541,11 @@ BOOL HookedGetOverlappedResult(
             continue;
 
         // Found hooked, return prev stored value
+        SetLastError(NO_ERROR);
         *lpNumberOfBytesTransferred = lpOverlapped->InternalHigh;
+
+        if (lpOverlapped->Internal == STATUS_END_OF_FILE)
+            SetLastError(ERROR_HANDLE_EOF);
 
         return TRUE;
     }
