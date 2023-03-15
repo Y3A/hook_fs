@@ -5,17 +5,19 @@
 #include "hooker.h"
 #include "hook_types.h"
 
-_CreateFileW           fCreateFileW;
-_NtCreateFile          fNtCreateFile;
-_ReadFile              fReadFile;
-_NtReadFile            fNtReadFile;
-_GetFileSize           fGetFileSize;
-_GetFileSizeEx         fGetFileSizeEx;
-_CloseHandle           fCloseHandle;
-_SetFilePointer        fSetFilePointer;
-_SetFilePointerEx      fSetFilePointerEx;
-_GetFileAttributesW    fGetFileAttributesW;
-_GetFileAttributesExW  fGetFileAttributesExW;
+_CreateFileW             fCreateFileW;
+_NtCreateFile            fNtCreateFile;
+_ReadFile                fReadFile;
+_NtReadFile              fNtReadFile;
+_GetFileSize             fGetFileSize;
+_GetFileSizeEx           fGetFileSizeEx;
+_CloseHandle             fCloseHandle;
+_SetFilePointer          fSetFilePointer;
+_SetFilePointerEx        fSetFilePointerEx;
+_GetFileAttributesW      fGetFileAttributesW;
+_GetFileAttributesExW    fGetFileAttributesExW;
+_GetOverlappedResult     fGetOverlappedResult;
+_GetOverlappedResultEx   fGetOverlappedResultEx;
 
 INTERNAL_FILE g_files[MAX_FILES];
 HANDLE        g_cur_unique_handle = HANDLE_START;
@@ -35,6 +37,8 @@ DLLEXPORT void HookerInit(void)
     fSetFilePointerEx = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "SetFilePointerEx");
     fGetFileAttributesW = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileAttributesW");
     fGetFileAttributesExW = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetFileAttributesExW");
+    fGetOverlappedResult = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetOverlappedResult");
+    fGetOverlappedResultEx = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "GetOverlappedResultEx");
 
     // Use detours to hook em
     DetourTransactionBegin();
@@ -51,6 +55,8 @@ DLLEXPORT void HookerInit(void)
     DetourAttach((PVOID)&fSetFilePointerEx, HookedSetFilePointerEx);
     DetourAttach((PVOID)&fGetFileAttributesW, HookedGetFileAttributesW);
     DetourAttach((PVOID)&fGetFileAttributesExW, HookedGetFileAttributesExW);
+    DetourAttach((PVOID)&fGetOverlappedResult, HookedGetOverlappedResult);
+    DetourAttach((PVOID)&fGetOverlappedResultEx, HookedGetOverlappedResultEx);
 
     DetourTransactionCommit();
     return;

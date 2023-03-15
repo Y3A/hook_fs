@@ -98,4 +98,19 @@ BOOL HookedGetFileAttributesExW (
     LPVOID                 lpFileInformation
 );
 
+BOOL HookedGetOverlappedResult (
+    HANDLE       hFile,
+    LPOVERLAPPED lpOverlapped,
+    LPDWORD      lpNumberOfBytesTransferred,
+    BOOL         bWait
+);
+
+BOOL HookedGetOverlappedResultEx (
+    HANDLE       hFile,
+    LPOVERLAPPED lpOverlapped,
+    LPDWORD      lpNumberOfBytesTransferred,
+    DWORD        dwMilliseconds,
+    BOOL         bAlertable
+);
+
 #endif

@@ -104,4 +104,19 @@ typedef BOOL (*_GetFileAttributesExW) (
     LPVOID                 lpFileInformation
 );
 
+typedef BOOL (*_GetOverlappedResult) (
+    HANDLE       hFile,
+    LPOVERLAPPED lpOverlapped,
+    LPDWORD      lpNumberOfBytesTransferred,
+    BOOL         bWait
+);
+
+typedef BOOL (*_GetOverlappedResultEx) (
+    HANDLE       hFile,
+    LPOVERLAPPED lpOverlapped,
+    LPDWORD      lpNumberOfBytesTransferred,
+    DWORD        dwMilliseconds,
+    BOOL         bAlertable
+);
+
 #endif

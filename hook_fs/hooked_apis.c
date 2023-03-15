@@ -17,12 +17,6 @@ HANDLE HookedCreateFileW(
 {
     DWORD cur_max = g_cur_index;
 
-    if (dwFlagsAndAttributes & FILE_FLAG_OVERLAPPED) {
-        // Don't support async IO as of now
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return INVALID_HANDLE_VALUE;
-    }
-
     for (int i = 0; i < cur_max; i++) {
         if (wcscmp(g_files[i].name, lpFileName) != 0)
             continue;
@@ -128,6 +122,12 @@ BOOL HookedReadFile(
         file = &g_files[i];
         to_read = nNumberOfBytesToRead > file->data_len ? file->data_len : nNumberOfBytesToRead;
         offset = file->pos;
+
+        // lpOverlapped can't be null if file is opened as overlapped
+        if (file->flag_attributes & FILE_FLAG_OVERLAPPED && !lpOverlapped) {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
 
         // Error handling for ridiculous offsets by SetFilePointer and friends
         if (offset >= file->data_len)
@@ -513,4 +513,46 @@ BOOL HookedGetFileAttributesExW(
 
     SetLastError(ERROR_FILE_NOT_FOUND);
     return FALSE;
+}
+
+BOOL HookedGetOverlappedResult(
+    HANDLE       hFile,
+    LPOVERLAPPED lpOverlapped,
+    LPDWORD      lpNumberOfBytesTransferred,
+    BOOL         bWait
+)
+{
+    // Since we emulate everything as synchronous, this is easy
+    DWORD cur_max = g_cur_index;
+
+    if (!lpNumberOfBytesTransferred || !lpOverlapped) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    for (int i = 0; i < cur_max; i++) {
+        if (hFile != g_files[i].handle)
+            continue;
+
+        // Found hooked, return prev stored value
+        *lpNumberOfBytesTransferred = lpOverlapped->InternalHigh;
+
+        return TRUE;
+    }
+
+    // Not found
+    SetLastError(ERROR_FILE_NOT_FOUND);
+    return FALSE;
+}
+
+BOOL HookedGetOverlappedResultEx(
+    HANDLE       hFile,
+    LPOVERLAPPED lpOverlapped,
+    LPDWORD      lpNumberOfBytesTransferred,
+    DWORD        dwMilliseconds,
+    BOOL         bAlertable
+)
+{
+    // Ignore these extra args :) the program has to wait!
+    return HookedGetOverlappedResult(hFile, lpOverlapped, lpNumberOfBytesTransferred, TRUE);
 }
