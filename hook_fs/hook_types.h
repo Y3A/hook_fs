@@ -15,7 +15,10 @@ typedef struct
     PVOID   data;
     SIZE_T  data_len;
     DWORD   attributes;
-    DWORD   flag_attributes; // creation time flag and attributes
+    union {
+        DWORD   flag_attributes; // CreateFileW
+        DWORD   create_options;  // NtCreateFile
+    };
     DWORD   pos;
     DWORD   ref_count;
 } INTERNAL_FILE, *PINTERNAL_FILE;
@@ -64,7 +67,7 @@ typedef NTSTATUS (*_NtReadFile) (
     ULONG            Length,
     PLARGE_INTEGER   ByteOffset,
     PULONG           Key
-    );
+);
 
 typedef DWORD (*_GetFileSize) (
     HANDLE  hFile,

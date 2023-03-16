@@ -63,12 +63,12 @@ NTSTATUS HookedNtCreateFile(
     if (ObjectAttributes->RootDirectory)
         // ObjectName is relative, just call our fake createfile
         res = HookedCreateFileW(ObjectAttributes->ObjectName->Buffer, \
-            0, 0, NULL, 0, 0, NULL);
+            0, 0, NULL, 0, CreateOptions, NULL);
 
     else
-        // ObjectName is absolute, assume \\?\ for global root directory
-        res = HookedCreateFileW(ObjectAttributes->ObjectName->Buffer + strlen("\\\\?\\") * 2, \
-            0, 0, NULL, 0, 0, NULL);
+        // ObjectName is absolute, assume \??\\ for global root directory
+        res = HookedCreateFileW(ObjectAttributes->ObjectName->Buffer + strlen("\\??\\\\"), \
+            0, 0, NULL, 0, CreateOptions, NULL);
 
     *FileHandle = res;
 
@@ -132,7 +132,10 @@ BOOL HookedReadFile(
         if (offset >= file->data_len)
             if (!lpOverlapped) {
                 *lpNumberOfBytesRead = 0;
-                SetLastError(NO_ERROR);
+                if (file->flag_attributes & FILE_FLAG_OVERLAPPED)
+                    SetLastError(ERROR_IO_PENDING);
+                else
+                    SetLastError(ERROR_HANDLE_EOF);
                 return TRUE;
             }
 
@@ -161,7 +164,7 @@ BOOL HookedReadFile(
             }
 
         // Begin IO
-        SetLastError(ERROR_IO_PENDING);
+        SetLastError(NO_ERROR);
         offset = lpOverlapped->OffsetHigh;
         offset = offset << 32 | lpOverlapped->Offset;
 
@@ -169,25 +172,31 @@ BOOL HookedReadFile(
         if (offset >= (ULONG64)file->data_len) {
             lpOverlapped->Internal = STATUS_END_OF_FILE;
             lpOverlapped->InternalHigh = 0;
+            if (file->flag_attributes & FILE_FLAG_OVERLAPPED)
+                SetLastError(ERROR_IO_PENDING);
+            else
+                SetLastError(ERROR_HANDLE_EOF);
             if (lpOverlapped->hEvent)
                 SetEvent(lpOverlapped->hEvent);
             return FALSE;
         }
 
-        // Handle EOF
-        if ((ULONG64)offset + (ULONG64)to_read > (ULONG64)file->data_len)
-            lpOverlapped->Internal = STATUS_END_OF_FILE;
-        else
-            lpOverlapped->Internal = STATUS_SUCCESS;
+        // Handle EOF if not overlapped
+        if ((ULONG64)offset + (ULONG64)to_read > (ULONG64)file->data_len \
+            && !(file->flag_attributes & FILE_FLAG_OVERLAPPED))
+            SetLastError(ERROR_HANDLE_EOF);
+
+        lpOverlapped->Internal = STATUS_SUCCESS;
 
         to_read = nNumberOfBytesToRead > file->data_len ? file->data_len : nNumberOfBytesToRead;
         to_read = to_read > (file->data_len - (DWORD)offset) ? (file->data_len - (DWORD)offset) : to_read;
         RtlMoveMemory(lpBuffer, (PBYTE)((ULONG64)file->data + (ULONG64)offset), to_read);
 
         // Return success
+        file->pos = offset;
         InterlockedAdd(&file->pos, to_read);
 
-        if (lpNumberOfBytesRead)
+        if (lpNumberOfBytesRead && !(file->flag_attributes & FILE_FLAG_OVERLAPPED))
             *lpNumberOfBytesRead = to_read;
 
         lpOverlapped->InternalHigh = to_read;
@@ -196,7 +205,12 @@ BOOL HookedReadFile(
             SetEvent(lpOverlapped->hEvent);
 
         // Return pending to emulate async
-        return FALSE;
+        if (file->flag_attributes & FILE_FLAG_OVERLAPPED) {
+            SetLastError(ERROR_IO_PENDING);
+            return FALSE;
+        }
+
+        return TRUE;
     }
 
     SetLastError(ERROR_FILE_NOT_FOUND);
@@ -236,7 +250,7 @@ NTSTATUS HookedNtReadFile(
         
         if (ByteOffset) {
             if (ByteOffset->HighPart == -1 && ByteOffset->LowPart == FILE_USE_FILE_POINTER_POSITION \
-                && (file->flag_attributes & FILE_SYNCHRONOUS_IO_ALERT || file->flag_attributes & FILE_SYNCHRONOUS_IO_NONALERT)) {
+                && (file->create_options & FILE_SYNCHRONOUS_IO_ALERT || file->create_options & FILE_SYNCHRONOUS_IO_NONALERT)) {
                 // Special case, read from current pos
                 offset = pos;
             }
@@ -255,7 +269,7 @@ NTSTATUS HookedNtReadFile(
             }
         }
         else
-            if (file->flag_attributes & FILE_SYNCHRONOUS_IO_ALERT || file->flag_attributes & FILE_SYNCHRONOUS_IO_NONALERT)
+            if (file->create_options & FILE_SYNCHRONOUS_IO_ALERT || file->create_options & FILE_SYNCHRONOUS_IO_NONALERT)
                 // Special case again, continue position
                 offset = pos;
 
@@ -279,6 +293,12 @@ NTSTATUS HookedNtReadFile(
         InterlockedAdd(&(file->pos), to_read);
         if (Event)
             SetEvent(Event);
+
+        // Emulate async
+        if (!(file->create_options & FILE_SYNCHRONOUS_IO_ALERT || \
+            file->create_options & FILE_SYNCHRONOUS_IO_NONALERT))
+            return STATUS_PENDING;
+
         return STATUS_SUCCESS;
     }
 
@@ -374,7 +394,7 @@ DWORD HookedSetFilePointer(
 {
     DWORD           cur_max = g_cur_index;
     PINTERNAL_FILE  file;
-    DWORD           pos;
+    LONG            pos;
 
     for (int i = 0; i < cur_max; i++) {
         if (hFile != g_files[i].handle)
@@ -382,7 +402,12 @@ DWORD HookedSetFilePointer(
 
         // Found hooked file
         file = &g_files[i];
-        pos = file->pos;
+        pos = (LONG)file->pos;
+
+        // Undefined if overlap, real API returns 0 so I'll follow
+        if (file->flag_attributes & FILE_FLAG_OVERLAPPED) {
+            return 0;
+        }
 
         if (lpDistanceToMoveHigh && *lpDistanceToMoveHigh != 0) {
             // Don't support 64 bit offsets
@@ -401,7 +426,7 @@ DWORD HookedSetFilePointer(
                 break;
 
             case FILE_END:
-                pos = file->data_len;
+                pos = (LONG)file->data_len;
                 break;
 
             default:
@@ -418,7 +443,8 @@ DWORD HookedSetFilePointer(
         }
 
         // Success
-        file->pos = pos;
+        file->pos = (DWORD)pos;
+        
         SetLastError(NO_ERROR);
         return pos;
     }
@@ -437,13 +463,13 @@ BOOL HookedSetFilePointerEx(
 {
     DWORD res;
 
-    if (liDistanceToMove.HighPart) {
-        // Again, don't support 64bit
+    // Again, don't support 64bit
+    if (liDistanceToMove.QuadPart < -(LONGLONG)2147483648 || liDistanceToMove.QuadPart >(LONGLONG)2147483647) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
 
-    res = HookedSetFilePointer(hFile, liDistanceToMove.LowPart, NULL, dwMoveMethod);
+    res = HookedSetFilePointer(hFile, (LONG)liDistanceToMove.QuadPart, NULL, dwMoveMethod);
     if (res == INVALID_SET_FILE_POINTER) {
         // Error would have been set by the other function
         return FALSE;
