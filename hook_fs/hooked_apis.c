@@ -40,6 +40,35 @@ HANDLE HookedCreateFileW(
     return INVALID_HANDLE_VALUE;
 }
 
+HANDLE HookedCreateFileA(
+    LPCSTR                lpFileName,
+    DWORD                 dwDesiredAccess,
+    DWORD                 dwShareMode,
+    LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+    DWORD                 dwCreationDisposition,
+    DWORD                 dwFlagsAndAttributes,
+    HANDLE                hTemplateFile
+)
+{
+    HANDLE  ret;
+    SIZE_T  namebuf_sz = (strlen(lpFileName) + 1), unused;
+    LPWSTR  wfname = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, namebuf_sz * sizeof(WCHAR));
+
+    if (!wfname) {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return INVALID_HANDLE_VALUE;
+    }
+
+    mbstowcs_s(&unused, wfname, namebuf_sz, lpFileName, namebuf_sz - 1);
+
+    ret = HookedCreateFileW(wfname, dwDesiredAccess, dwShareMode, \
+        lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+
+    HeapFree(GetProcessHeap(), 0, wfname);
+
+    return ret;
+}
+
 NTSTATUS HookedNtCreateFile(
     PHANDLE            FileHandle,
     ACCESS_MASK        DesiredAccess,

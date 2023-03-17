@@ -8,6 +8,7 @@
 #pragma comment(lib, "detours.lib")
 
 _CreateFileW             fCreateFileW;
+_CreateFileA             fCreateFileA;
 _NtCreateFile            fNtCreateFile;
 _ReadFile                fReadFile;
 _NtReadFile              fNtReadFile;
@@ -34,6 +35,7 @@ DLLEXPORT void HookerInit(void)
 
     // Load desired functions
     fCreateFileW = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "CreateFileW");
+    fCreateFileA = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "CreateFileA");
     fNtCreateFile = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtCreateFile");
     fReadFile = GetProcAddress(GetModuleHandleW(L"KernelBase.dll"), "ReadFile");
     fNtReadFile = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtReadFile");
@@ -52,6 +54,7 @@ DLLEXPORT void HookerInit(void)
     DetourUpdateThread(GetCurrentThread());
 
     DetourAttach((PVOID)&fCreateFileW, HookedCreateFileW);
+    DetourAttach((PVOID)&fCreateFileA, HookedCreateFileA);
     DetourAttach((PVOID)&fNtCreateFile, HookedNtCreateFile);
     DetourAttach((PVOID)&fReadFile, HookedReadFile);
     DetourAttach((PVOID)&fNtReadFile, HookedNtReadFile);

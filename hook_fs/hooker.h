@@ -26,6 +26,16 @@ HANDLE HookedCreateFileW(
     HANDLE                hTemplateFile
 );
 
+HANDLE HookedCreateFileA(
+    LPCSTR                lpFileName,
+    DWORD                 dwDesiredAccess,
+    DWORD                 dwShareMode,
+    LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+    DWORD                 dwCreationDisposition,
+    DWORD                 dwFlagsAndAttributes,
+    HANDLE                hTemplateFile
+);
+
 NTSTATUS HookedNtCreateFile (
     PHANDLE            FileHandle,
     ACCESS_MASK        DesiredAccess,

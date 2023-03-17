@@ -35,6 +35,16 @@ typedef HANDLE (*_CreateFileW) (
     HANDLE                hTemplateFile
 );
 
+typedef HANDLE(*_CreateFileA) (
+    LPCSTR                lpFileName,
+    DWORD                 dwDesiredAccess,
+    DWORD                 dwShareMode,
+    LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+    DWORD                 dwCreationDisposition,
+    DWORD                 dwFlagsAndAttributes,
+    HANDLE                hTemplateFile
+);
+
 typedef NTSTATUS (*_NtCreateFile) (
     PHANDLE            FileHandle,
     ACCESS_MASK        DesiredAccess,
