@@ -12,7 +12,7 @@ extern DWORD         g_cur_index;
 extern _CloseHandle  fCloseHandle;
 
 DLLEXPORT void HookerInit(void);
-DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffer);
+DLLEXPORT BOOL HookerHookFile(LPCWSTR lpFileName, PVOID lpBuffer, SIZE_T cbBuffer, DWORD dwAttribute);
 DLLEXPORT BOOL HookerUpdateBufLen(LPCWSTR lpFileName, SIZE_T cbBuffer);
 
 // Internals
